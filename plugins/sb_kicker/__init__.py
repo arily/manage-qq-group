@@ -1,7 +1,7 @@
 import asyncio
 import base64
 from datetime import datetime, timezone
-from typing import List, TypedDict
+from typing import List, TypedDict, Any
 
 import mistune
 from alicebot import Plugin
@@ -13,11 +13,15 @@ from playwright.async_api import async_playwright
 from .db import Accounts, Admins
 from .html import HTML as h
 
-from tortoise.expressions import Q, F
+from tortoise.expressions import F
 
 
 class GetGroupMemberList(TypedDict):
     user_id: int
+    card: Any
+    nickname: str
+    last_sent_time: float
+    level: int
 
 
 class SBKicker(Plugin):
@@ -74,7 +78,7 @@ class SBKicker(Plugin):
             reply_msg += (
                 f"| {i} "
                 f"| {member['user_id']} "
-                f"| {member['nickname'] if member['card'] is None else member['card']} "
+                f"| {member['card'] if member['card'] is not None else member['nickname']} "
                 f"| {member['level']} "
                 f"| {datetime.fromtimestamp(member['last_sent_time']).isoformat()} "
                 f"| {round(member_weights[i][1])} "
@@ -130,7 +134,8 @@ class SBKicker(Plugin):
                     reject_add_request=False,
                 )  # noqa
                 await event.reply(
-                    f"已送走{members_dict[member_weights[i][0]]['card']}({member_weights[i][0]}) [{i + 1}/{int(ask_answer.get_plain_text())}]"  # noqa
+                    f"已送走{members_dict[member_weights[i][0]]['card']}({member_weights[i][0]}) [{i + 1}/{int(ask_answer.get_plain_text())}]"
+                    # noqa
                 )
                 await asyncio.sleep(3)
             await event.reply("送完了")
@@ -164,7 +169,7 @@ class SBKicker(Plugin):
 
         existing_ids = [acc.qq_id for acc in existing_accounts]
 
-        Accounts.bulk_create(
+        await Accounts.bulk_create(
             Accounts(group_id=self.group, qq_id=member["user_id"])
             for member in members
             if member["user_id"] not in existing_ids
