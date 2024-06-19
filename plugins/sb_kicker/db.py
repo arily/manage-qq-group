@@ -10,6 +10,8 @@ class OpType(Enum):
 
 
 class Accounts(Model):
+    class Meta:
+        table = "accounts"
     id = fields.IntField(pk=True)
     group_id = fields.IntField(index=True)
     qq_id = fields.IntField(index=True)
@@ -19,13 +21,17 @@ class Accounts(Model):
 
 
 class Admins(Model):
+    class Meta:
+        table = "admins"
     id = fields.IntField(pk=True)
     qq_id = fields.IntField(index=True)
 
 
 class Logs(Model):
+    class Meta:
+        table = "logs"
     id = fields.IntField(pk=True)
     time = fields.DatetimeField()
     account_id = fields.IntField(index=True)
     admin_id = fields.IntField(index=True)
-    op = fields.TextField()
+    op = fields.CharEnumField(OpType)
