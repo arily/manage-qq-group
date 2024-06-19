@@ -2,11 +2,7 @@ import asyncio
 import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Literal
-
-from sqlalchemy import insert
-from sb_kicker.db import Admin, Session
-
+from typing import List, Literal, TypedDict
 
 import mistune
 from alicebot import Plugin
@@ -15,9 +11,8 @@ from alicebot.adapter.cqhttp.event import PrivateMessageEvent
 from alicebot.adapter.cqhttp.message import CQHTTPMessageSegment
 from alicebot.exceptions import GetEventTimeout
 from playwright.async_api import async_playwright
-
-from plugins.sb_kicker.db import Account
-from typing import TypedDict
+from plugins.sb_kicker.db import Account, Admin, Session
+from sqlalchemy import insert
 
 
 class HTML:
