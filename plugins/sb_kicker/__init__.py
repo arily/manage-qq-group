@@ -182,7 +182,7 @@ class SBKicker(Plugin):
 
     @staticmethod
     async def is_admin(qq_id: int):
-        return bool(await Admins.get(qq_id=qq_id))
+        return await Admins.exists(qq_id=qq_id)
 
     @staticmethod
     async def screenshot(content: str):
