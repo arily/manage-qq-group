@@ -12,51 +12,8 @@ from alicebot.adapter.cqhttp.message import CQHTTPMessageSegment
 from alicebot.exceptions import GetEventTimeout
 from playwright.async_api import async_playwright
 from plugins.sb_kicker.db import Account, Admin, Session
+from plugins.sb_kicker.html import HTML as h
 from sqlalchemy import insert
-
-
-class HTML:
-    @staticmethod
-    def html(*content: str):
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        {"".join(content)}
-        </html>
-    """
-
-    @staticmethod
-    def head(*content: str):
-        return f"""
-        <head>
-            <meta charset="UTF-8">
-            {"".join(content)}
-        </head>
-    """
-
-    @staticmethod
-    def style(content: str):
-        return HTML.tag("style", content)
-
-    @staticmethod
-    def body(*content: str, **attrs: str):
-        return HTML.tag("body", "".join(content), **attrs)
-
-    @staticmethod
-    def tag(tag: str, *content: str, **attrs: str):
-        if " " in tag:
-            raise Exception("invalid tag")
-
-        return f"""<{tag} {HTML.unpack_attrs(attrs)}>{"".join(content)}</{tag}>"""
-
-    @staticmethod
-    def unpack_attrs(attrs: dict[str, str]):
-        attrs["class"] = attrs["class_name"]
-        return " ".join([f'{k}="{HTML.escape(v)}"' for k, v in attrs if k is not None])
-
-    @staticmethod
-    def escape(str: str):
-        return str.replace('"', '"').replace('"', '"')
 
 
 class GetGroupMemberList(TypedDict):
@@ -68,7 +25,6 @@ class SBKicker(Plugin):
     block: bool = False
     trigger = "sb群送人"
     group = 792778662
-    h = HTML
     _cached_head = ""
 
     @property
@@ -76,8 +32,8 @@ class SBKicker(Plugin):
         return self._set_head() if self._cached_head == "" else self._cached_head
 
     def _set_head(self) -> str:
-        self._cached_head = self.h.head(
-            self.h.style(open("libs/markdown/github-markdown.css").read())
+        self._cached_head = h.head(
+            h.style(open("libs/markdown/github-markdown.css").read())
         )
         return self._cached_head
 
@@ -126,7 +82,7 @@ class SBKicker(Plugin):
             )
         reply_msg += "  \n"
 
-        h = self.h
+        h = h
 
         b64content = base64.b64encode(
             await self.screenshot(
