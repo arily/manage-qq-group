@@ -10,9 +10,10 @@ from alicebot.adapter.cqhttp.event import PrivateMessageEvent
 from alicebot.adapter.cqhttp.message import CQHTTPMessageSegment
 from alicebot.exceptions import GetEventTimeout
 from playwright.async_api import async_playwright
-from .db import Account, Admin, Session
+from .db import Accounts, Admins
 from .html import HTML as h
-from sqlalchemy import insert
+
+from tortoise.expressions import Q, F
 
 
 class GetGroupMemberList(TypedDict):
@@ -156,18 +157,18 @@ class SBKicker(Plugin):
                 "get_group_member_list", group_id=self.group
             )
 
-        with Session() as session:
-            existing_accounts = session.query(Account).where(
-                Account.group_id == self.group,
-                Account.qq_id.in_(member["user_id"] for member in members),
-            )
-            existing_ids = [acc.qq_id for acc in existing_accounts]
+        existing_accounts = Accounts.filter(
+            F(Accounts.group_id == self.group),
+            F(Accounts.qq_id).contains([member["user_id"] for member in members]),
+        )
 
-            insert(Account).values(
-                {"group_id": self.group, "qq_id": member["user_id"]}
-                for member in members
-                if member["user_id"] not in existing_ids
-            )
+        existing_ids = [acc.qq_id for acc in existing_accounts]
+
+        Accounts.bulk_create(
+            Accounts(group_id=self.group, qq_id=member["user_id"])
+            for member in members
+            if member["user_id"] not in existing_ids
+        )
 
     @staticmethod
     def calculate_weight(current_time: float, member):
@@ -180,10 +181,8 @@ class SBKicker(Plugin):
         return weight
 
     @staticmethod
-    def is_admin(id: int):
-        with Session() as session:
-            res = session.query(Admin).one_or_none()
-            return bool(res)
+    async def is_admin(qq_id: int):
+        return bool(await Admins.get(qq_id=qq_id))
 
     @staticmethod
     async def screenshot(content: str):
