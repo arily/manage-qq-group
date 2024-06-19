@@ -49,8 +49,8 @@ class Log(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     time: Mapped[datetime]
-    account_id: Mapped[Account] = relationship(Account.id)
-    admin_id: Mapped[Account] = relationship(Account.id)
+    account_id: Mapped[Account] = relationship(Account)
+    admin_id: Mapped[Account] = relationship(Account)
     op: Mapped[OpType]
 
 
