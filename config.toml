@@ -1,0 +1,9 @@
+[bot]
+plugin_dirs = ["plugins"]
+adapters = ["alicebot.adapter.cqhttp"]
+
+[adapter.cqhttp]
+adapter_type = "reverse-ws"
+host = "127.0.0.1"
+port = 8080
+url = "/onebot/v11/ws"
