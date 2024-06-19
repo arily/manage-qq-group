@@ -143,7 +143,7 @@ class SBKicker(Plugin):
 
         event: PrivateMessageEvent = self.event
 
-        if not self.is_admin(event.sender.user_id):
+        if not await self.is_admin(event.sender.user_id):
             return False
 
         if event.message.get_plain_text().strip() != self.trigger:
