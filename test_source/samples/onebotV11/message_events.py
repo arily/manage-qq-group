@@ -3,11 +3,13 @@ from datetime import datetime
 from nonebot.adapters.onebot.v11 import PrivateMessageEvent, Message
 from nonebot.adapters.onebot.v11.event import Sender
 
+from .user import normal_sender
+
 
 def private_message_event_normal(
         msg: str,
-        user_id: int = 1000000000,
-        nickname: str = "private message event normal test",
+        user_id: int = normal_sender.user_id,
+        nickname: str = normal_sender.nickname,
         msg_id: int = 100000,
         self_id: int = 10000,
 ) -> PrivateMessageEvent:

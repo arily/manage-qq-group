@@ -9,7 +9,7 @@ async def init():
     #  which contain models from "app.models"
     await Tortoise.init(
         db_url="sqlite://data/db.sqlite3",
-        modules={"models": ["models.model"]},
+        modules={"models": ["models.db"]},
     )
     # Generate the schema
     await Tortoise.generate_schemas()
