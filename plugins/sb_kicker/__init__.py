@@ -1,37 +1,55 @@
 import asyncio
-from datetime import datetime, timezone
 
 from loguru import logger
-from nonebot.adapters.onebot.v11 import PrivateMessageEvent, MessageEvent, Bot as OnebotV11Bot, Message
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot import on_fullmatch
+from nonebot.adapters.onebot.v11 import MessageEvent, Bot as OnebotV11Bot
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.internal.matcher import Matcher
 from nonebot.internal.params import Arg
-from nonebot.rule import Rule
 from nonebot.message import run_postprocessor, run_preprocessor
+from nonebot.rule import Rule
 from nonebot.typing import T_State
 
-from models.db import Admins, Caches
-from nonebot import on_message, on_fullmatch
-
+from models.db import Admins
 from utils.qq_helper import is_admin
 from .enum import PluginStatus
-from tortoise import filters
-
 from .utils import *
 
 SB_GROUP_ID = 792778662
 
 
-async def checker_common(event: PrivateMessageEvent) -> bool:
-    return (
-        await Admins.exists(qq_id=event.sender.user_id)
+async def checker_common(event: MessageEvent) -> bool:
+    return await Admins.exists(qq_id=event.sender.user_id)
+
+
+async def checker_is_admin(bot: OnebotV11Bot):
+    return await is_admin(bot, SB_GROUP_ID)
+
+
+async def checker_is_plugin_idle() -> bool:
+    cache, _ = await Caches.get_or_create(
+        key="sb_kicker_status",
+        defaults={
+            "value": PluginStatus.Idle.value
+        }
     )
+    return cache.value == PluginStatus.Idle.value
 
 
 sb_kicker = on_fullmatch(
     "sb服送人",
-    rule=Rule(checker_common)
+    rule=Rule(checker_common, checker_is_admin, checker_is_plugin_idle),
 )
+
+sb_kicker_force = on_fullmatch(
+    "sb服送人 --force"
+)
+
+
+@run_preprocessor
+async def _(matcher: Matcher):
+    if isinstance(matcher, sb_kicker):
+        await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Running.value)
 
 
 @run_postprocessor
@@ -40,16 +58,9 @@ async def _(matcher: Matcher):
         await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Idle.value)
 
 
+@sb_kicker_force.handle()
 @sb_kicker.handle()
 async def _(bot: OnebotV11Bot, state: T_State):
-    if not await is_admin(bot, SB_GROUP_ID):
-        await sb_kicker.finish("只有bot为管理员或群主才能使用本功能")
-    if await check_plugin_running():
-        await sb_kicker.reject("上次插件还在运行中，终止本次操作...")
-        return
-
-    await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Running.value)
-
     await sb_kicker.send("稍等...")
 
     resp = await bot.get_group_member_list(group_id=SB_GROUP_ID)
@@ -72,6 +83,7 @@ async def _(bot: OnebotV11Bot, state: T_State):
     await sb_kicker.send(msg)
 
 
+@sb_kicker_force.got("kick_count", prompt="送走几个(从上到下)？\n输入任意非正整数取消")
 @sb_kicker.got("kick_count", prompt="送走几个(从上到下)？\n输入任意非正整数取消")
 async def _(bot: OnebotV11Bot, state: T_State, kick_count: Message = Arg()):
     if datetime.now().timestamp() - state["trigger_time"] >= 60:
@@ -106,4 +118,3 @@ async def _(bot: OnebotV11Bot, state: T_State, kick_count: Message = Arg()):
     except Exception as e:
         logger.trace(e)
         await sb_kicker.finish("操作失败，请查看日志")
-

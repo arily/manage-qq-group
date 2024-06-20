@@ -18,18 +18,6 @@ def calculate_kick_weight(current_time: float, member):
     return weight
 
 
-async def check_plugin_running() -> bool:
-    cache, _ = await Caches.get_or_create(
-        key="sb_kicker_status",
-        defaults={
-            "value": PluginStatus.Idle.value
-        }
-    )
-    if cache.value == PluginStatus.Running.value:
-        return True
-    return False
-
-
 async def gen_kick_query_msg(members_dict, member_weights):
     reply_msg = (
         "# 最应该送走的用户，权重越大越该送  \n\n"
