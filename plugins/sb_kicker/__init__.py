@@ -64,54 +64,52 @@ async def _(bot: OnebotV11Bot, state: T_State):
     await sb_kicker.send("稍等...")
 
     resp = await bot.get_group_member_list(group_id=SB_GROUP_ID)
-    resp = await get_accounts_with_db_data(resp)
+    members = await get_accounts_with_db_data(resp)
 
     current_time = datetime.now().timestamp()
-
     state["trigger_time"] = current_time
-    state["member_weights"] = sorted(
-        [(m["qq_id"], calculate_kick_weight(current_time, m)) for m in resp],
-        key=lambda x: x[1],
-        reverse=True,
-    )
 
-    state["members_dict"] = {
-        member["qq_id"]: member for member in resp
-    }  # 将成员列表转换为以 qq_id 为键的字典 提性能，也方便查询
+    for item in members:
+        item["weight"] = calculate_kick_weight(current_time, item)
 
-    msg = await gen_kick_query_msg(state["members_dict"], state["member_weights"])
+    state["sorted"] = members.copy()
+    state["sorted"].sort(key=lambda x: x["weight"], reverse=True)
+
+    msg = await gen_kick_query_msg(state["sorted"])
 
     await sb_kicker.send(msg)
 
 
-@sb_kicker_force.got("kick_count", prompt="送走几个(从上到下)？\n输入任意非正整数取消")
-@sb_kicker.got("kick_count", prompt="送走几个(从上到下)？\n输入任意非正整数取消")
-async def _(bot: OnebotV11Bot, state: T_State, kick_count: Message = Arg()):
+@sb_kicker_force.got(
+    "pending_count", prompt="选择几个(从上到下)？\n输入任意非正整数取消"
+)
+@sb_kicker.got("pending_count", prompt="选择几个(从上到下)？\n输入任意非正整数取消")
+async def _(bot: OnebotV11Bot, state: T_State, pending_count: Message = Arg()):
     if datetime.now().timestamp() - state["trigger_time"] >= 60:
         await sb_kicker.finish("操作超时，取消上一次待输入的sb群kick操作")
 
     try:
-        int(kick_count.extract_plain_text())
+        int(pending_count.extract_plain_text())
     except ValueError:
         await sb_kicker.finish("取消本次操作")
 
-    kick_count = int(kick_count.extract_plain_text())
-    if kick_count <= 0:
+    pending_count = int(pending_count.extract_plain_text())
+    if pending_count <= 0:
         await sb_kicker.finish("取消本次操作, 长度不能为负")
-    if kick_count > len(state["member_weights"]):
+    if pending_count > len(state["member_weights"]):
         await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
 
     try:
-        for i in range(kick_count):
-            member = state["members_dict"][state["member_weights"][i][0]]
+        for i in range(pending_count):
+            member = state["sorted"][i]
             await bot.set_group_kick(
                 group_id=SB_GROUP_ID,
                 user_id=member["qq_id"],
                 reject_add_request=False,
             )
             await sb_kicker.send(
-                f"已送走 {member['card'] if member['card'] is not None else member['nickname']}"
-                f" （{member['qq_id']}) [{i + 1} / {kick_count}]"
+                f"已选择 {member['card'] if member['card'] is not None else member['nickname']}"
+                f" （{member['qq_id']}) [{i + 1} / {pending_count}]"
             )
 
             await asyncio.sleep(1)

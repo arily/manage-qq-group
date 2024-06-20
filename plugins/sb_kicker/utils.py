@@ -19,14 +19,26 @@ dotenv.load_dotenv()
 SB_GROUP_ID = int(os.getenv("SB_GROUP_ID"))
 
 
-def calculate_kick_weight(current_time: float, member):
+def calculate_kick_weight(current_time: float, member: JoinedGroupMemberInfo):
     if member is None:
         return 0
 
-    inactive_days = (current_time - member["last_sent_time"]) / (60 * 60 * 24)
+    inactive_seconds = current_time - member["last_sent_time"]
 
-    weight = inactive_days * (101 - int(member["level"]))
-    return weight
+    # 用户每增加一个level 权重降低1%，同时减去30天的潜水时长
+
+    weight = (
+        inactive_seconds * ((100 - int(member["level"])) / 100)
+        - int(member["level"]) * 30 * 24 * 60 * 60
+    )
+
+    if member["whitelisted"]:
+        weight = weight * 0.2
+
+    if member["sb_id"]:
+        weight = weight * 0.5
+
+    return weight / 10000
 
 
 async def check_plugin_running() -> bool:
@@ -38,23 +50,24 @@ async def check_plugin_running() -> bool:
     return False
 
 
-async def gen_kick_query_msg(members_dict: JoinedGroupMemberInfo, member_weights):
+async def gen_kick_query_msg(members: List[JoinedGroupMemberInfo]):
     reply_msg = (
-        "# 最应该送走的用户，权重越大越该送  \n\n"
-        "| ID | 昵称 | qq号 | SB服绑定的ID | 白名单? | 等级 | 最后发言时间 | 计算的权重 |  \n"
-        "|---:| --- | ---:| ---:        | ---    | ---: | ---        | ---:     |  \n"
+        "# 潜水榜 \n\n"
+        "| ID | 昵称 | QQ号 | SB服绑定的ID | 备注 | 白名单 | QQ等级 | 最后发言时间 | 计算的权重 |  \n"
+        "|---:| --- | ----:| -----------:| --- | :---: | ----: | ---------- | ---------:|  \n"
     )
     for i in range(30):
-        member = members_dict[member_weights[i][0]]
+        member = members[i]
         reply_msg += (
             f"| {i} "
             f"| {member['card'] if member['card'] is not None else member['nickname']} "
             f"| {member['qq_id']} "
             f"| {member['sb_id']} "
+            f"| {member['comment']} "
             f"| {'☑️' if member['whitelisted'] else ''} "
             f"| {member['level']} "
             f"| {datetime.fromtimestamp(member['last_sent_time']).isoformat()} "
-            f"| {round(member_weights[i][1])} "
+            f"| {member['weight']:9.2f} "
             f"|  \n"
         )
     reply_msg += "  \n"
@@ -71,8 +84,13 @@ def merge_onebot_data_with_db_result(
 ) -> JoinedGroupMemberInfo:
     maybe_onebot = deepcopy(onebot_data)
     qq_id = maybe_onebot.pop("user_id")
+    db_data = db_data or Accounts()
     return_value = JoinedGroupMemberInfo(
-        **maybe_onebot, whitelisted=False, sb_id=None, qq_id=qq_id, **(db_data or {})
+        **maybe_onebot,
+        qq_id=db_data.qq_id or qq_id,
+        whitelisted=db_data.whitelisted or False,
+        sb_id=db_data.sb_id or None,
+        comment=db_data.comment or "",
     )
     return return_value
 

@@ -26,3 +26,4 @@ class JoinedGroupMemberInfo(GroupMemberInfo):
     comment: str
     sb_id: Optional[int]
     whitelisted: Optional[bool]
+    weight: int
