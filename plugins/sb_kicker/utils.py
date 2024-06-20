@@ -56,8 +56,7 @@ async def gen_kick_query_msg(members: List[JoinedGroupMemberInfo]):
         "| ID | 昵称 | QQ号 | SB服绑定的ID | 备注 | 白名单 | QQ等级 | 最后发言时间 | 计算的权重 |  \n"
         "|---:| --- | ----:| -----------:| --- | :---: | ----: | ---------- | ---------:|  \n"
     )
-    for i in range(30):
-        member = members[i]
+    for i, member in enumerate(members):
         reply_msg += (
             f"| {i} "
             f"| {member['card'] if member['card'] is not None else member['nickname']} "
@@ -104,12 +103,11 @@ async def get_accounts_with_db_data(onebot_data: List[GroupMemberInfo]):
                     group_id=SB_GROUP_ID,
                     qq_id__in=[member["user_id"] for member in onebot_data],
                 ),
-                lambda x, m=member: x.qq_id == m["user_id"],
+                lambda x: x.qq_id == member["user_id"],
             ),
         )
         for member in onebot_data
     ]
-
 
 T = TypeVar("T")
 
