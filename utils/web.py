@@ -38,8 +38,9 @@ class HTML:
 
     @staticmethod
     def unpack_attrs(attrs: dict[str, str]):
-        attrs["class"] = attrs["class_name"]
-        return " ".join([f'{k}="{HTML.escape(v)}"' for k, v in attrs if k is not None])
+        if "class_name" in attrs.keys():
+            attrs["class"] = attrs["class_name"]
+        return " ".join([f'{k}="{HTML.escape(v)}"' for k, v in attrs.items() if attrs.keys()])
 
     @staticmethod
     def escape(s: str):

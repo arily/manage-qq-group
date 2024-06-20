@@ -1,6 +1,8 @@
 import base64
 from datetime import datetime
 
+from nonebot.adapters.onebot.v11 import MessageSegment
+
 from models.db import Caches
 from utils.web import screenshot_local_html, trans_md_to_html
 from . import PluginStatus
@@ -48,6 +50,6 @@ async def gen_kick_query_msg(members_dict, member_weights):
     reply_msg += "  \n"
 
     html = trans_md_to_html(reply_msg)
-
-    return await screenshot_local_html(html)
+    img_bin = await screenshot_local_html(html)
+    return MessageSegment.image(file="base64://" + base64.b64encode(img_bin).decode(encoding="utf-8"))
 
