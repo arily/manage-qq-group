@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 from loguru import logger
 from nonebot import on_fullmatch
@@ -15,7 +16,7 @@ from utils.qq_helper import is_admin
 from .enum import PluginStatus
 from .utils import *
 
-SB_GROUP_ID = 792778662
+SB_GROUP_ID = int(os.getenv("SB_GROUP_ID"))
 
 
 async def checker_common(event: MessageEvent) -> bool:
@@ -28,10 +29,7 @@ async def checker_is_admin(bot: OnebotV11Bot):
 
 async def checker_is_plugin_idle() -> bool:
     cache, _ = await Caches.get_or_create(
-        key="sb_kicker_status",
-        defaults={
-            "value": PluginStatus.Idle.value
-        }
+        key="sb_kicker_status", defaults={"value": PluginStatus.Idle.value}
     )
     return cache.value == PluginStatus.Idle.value
 
@@ -41,21 +39,23 @@ sb_kicker = on_fullmatch(
     rule=Rule(checker_common, checker_is_admin, checker_is_plugin_idle),
 )
 
-sb_kicker_force = on_fullmatch(
-    "sb服送人 --force"
-)
+sb_kicker_force = on_fullmatch("sb服送人 --force")
 
 
 @run_preprocessor
 async def _(matcher: Matcher):
     if isinstance(matcher, sb_kicker):
-        await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Running.value)
+        await Caches.filter(key="sb_kicker_status").update(
+            value=PluginStatus.Running.value
+        )
 
 
 @run_postprocessor
 async def _(matcher: Matcher):
     if isinstance(matcher, sb_kicker):
-        await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Idle.value)
+        await Caches.filter(key="sb_kicker_status").update(
+            value=PluginStatus.Idle.value
+        )
 
 
 @sb_kicker_force.handle()
@@ -64,19 +64,20 @@ async def _(bot: OnebotV11Bot, state: T_State):
     await sb_kicker.send("稍等...")
 
     resp = await bot.get_group_member_list(group_id=SB_GROUP_ID)
+    resp = await get_accounts_with_db_data(resp)
 
     current_time = datetime.now().timestamp()
 
     state["trigger_time"] = current_time
     state["member_weights"] = sorted(
-        [(m["user_id"], calculate_kick_weight(current_time, m)) for m in resp],
+        [(m["qq_id"], calculate_kick_weight(current_time, m)) for m in resp],
         key=lambda x: x[1],
-        reverse=True
+        reverse=True,
     )
 
     state["members_dict"] = {
-        member["user_id"]: member for member in resp
-    }  # 将成员列表转换为以 user_id 为键的字典 提性能，也方便查询
+        member["qq_id"]: member for member in resp
+    }  # 将成员列表转换为以 qq_id 为键的字典 提性能，也方便查询
 
     msg = await gen_kick_query_msg(state["members_dict"], state["member_weights"])
 
@@ -95,22 +96,22 @@ async def _(bot: OnebotV11Bot, state: T_State, kick_count: Message = Arg()):
         await sb_kicker.finish("取消本次操作")
 
     kick_count = int(kick_count.extract_plain_text())
-    if kick_count < 0:
-        await sb_kicker.finish("取消本次操作")
+    if kick_count <= 0:
+        await sb_kicker.finish("取消本次操作, 长度不能为负")
     if kick_count > len(state["member_weights"]):
-        await sb_kicker.finish("取消本次操作")
+        await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
 
     try:
         for i in range(kick_count):
             member = state["members_dict"][state["member_weights"][i][0]]
             await bot.set_group_kick(
                 group_id=SB_GROUP_ID,
-                user_id=member["user_id"],
-                reject_add_request=False
+                user_id=member["qq_id"],
+                reject_add_request=False,
             )
             await sb_kicker.send(
                 f"已送走 {member['card'] if member['card'] is not None else member['nickname']}"
-                f" （{member['user_id']}) [{i + 1} / {kick_count}]"
+                f" （{member['qq_id']}) [{i + 1} / {kick_count}]"
             )
 
             await asyncio.sleep(1)

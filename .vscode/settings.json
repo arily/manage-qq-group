@@ -1,7 +1,9 @@
 {
   "cSpell.words": [
+    "dotenv",
     "nonebot",
     "nonebug",
-    "Onebot"
+    "Onebot",
+    "postprocessor"
   ]
 }
