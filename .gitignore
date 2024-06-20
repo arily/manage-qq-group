@@ -1,4 +1,13 @@
+/.idea
+/.vscode
+
 __pycache__
+/venv
+/.venv
+
+/data
+/test_source/db
+/lagrange
 db.sqlite3*
-venv
-lagrange
+db.sqlite3-shm*
+db.sqlite3-wal*
