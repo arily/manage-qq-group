@@ -14,22 +14,11 @@ from nonebot.adapters.onebot.v11.event import Sender
 import os
 from tortoise import Tortoise
 from nonebug import App
+from tortoise.expressions import Q
 
-
-async def db_init():
-    # Here we create a SQLite DB using file "db.sqlite3"
-    #  also specify the app name of "models"
-    #  which contain models from "app.models"
-    await Tortoise.init(
-        db_url="sqlite://data/db.sqlite3",
-        modules={"models": ["models.model"]},
-    )
-    # Generate the schema
-    await Tortoise.generate_schemas()
-
-
-async def db_disconnect():
-    await Tortoise.close_connections()
+from models.model import *
+from test_source import config
+from test_source.samples.onebotV11.message_events import *
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -40,53 +29,43 @@ def load_bot():
     nonebot.load_plugins("plugins")
 
 
-@pytest.mark.asyncio
-async def test_sb_kicker(app: App):
-    from plugins.sb_kicker import sb_kicker
+class TestPluginSbKicker:
 
-    await Tortoise.init(
-        db_url="sqlite://data/db.sqlite3",
-        modules={"models": ["models.model"]},
-    )
-    await Tortoise.generate_schemas()
+    @pytest.mark.asyncio
+    async def test_sb_kicker(self, app: App):
+        from plugins.sb_kicker import sb_kicker
 
-    async with app.test_matcher(sb_kicker) as ctx:
-        bot = ctx.create_bot(base=OnebotV11Bot)
+        await self.init_db()
 
-        event = gen_private_message_event()
+        async with app.test_matcher(sb_kicker) as ctx:
+            bot = ctx.create_bot(base=OnebotV11Bot)
 
-        ctx.receive_event(bot, event)
+            event = private_message_event_normal("test")
 
-        ctx.should_pass_rule()
-        ctx.should_pass_permission()
-        ctx.should_call_send(event, "稍等...", result=None)
-        ctx.should_finished()
+            ctx.receive_event(bot, event)
 
-    await Tortoise.close_connections()
+            ctx.should_pass_rule()
+            ctx.should_pass_permission()
+            ctx.should_call_send(event, "稍等...", result=None)
+            ctx.should_finished()
+
+        try:
+            await Tortoise.close_connections()
+        except Exception:
+            pass
+
+    @staticmethod
+    async def init_db():
+        await Tortoise.init(
+            db_url=config.database["url"],
+            modules=config.database["modules"],
+        )
+        await Tortoise.generate_schemas()
+
+        if not await Admins.exists(qq_id=config.admin_user["user_id"]):
+            await Admins.create(
+                qq_id=config.admin_user["user_id"]
+            )
 
 
-def gen_private_message_event():
-    return PrivateMessageEvent(
-        time=int(datetime.now().timestamp()),
-        self_id=10000,
-        message=Message("1123"),
-        raw_message="1123",
-        message_id=100000,
-        user_id=1000000000,
-        message_type="private",
-        sender=Sender(
-            user_id=1000000000,
-            nickname="nonebot_test",
-            age=18,
-            area=None,
-            card=None,
-            level=None,
-            role=None,
-            sex="unknown",
-            title=None,
-        ),
-        to_me=True,
-        post_type="message",
-        sub_type="friend",
-        font=0,
-    )
+
