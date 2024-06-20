@@ -38,18 +38,20 @@ async def check_plugin_running() -> bool:
     return False
 
 
-async def gen_kick_query_msg(members_dict, member_weights):
+async def gen_kick_query_msg(members_dict: JoinedGroupMemberInfo, member_weights):
     reply_msg = (
         "# 最应该送走的用户，权重越大越该送  \n\n"
-        "| ID | qq号 | 昵称 | 等级 | 最后发言时间 | 计算的权重 |  \n"
-        "| --- | --- | --- | --- | --- | --- |  \n"
+        "| ID | 昵称 | qq号 | SB服绑定的ID | 白名单? | 等级 | 最后发言时间 | 计算的权重 |  \n"
+        "|---:| --- | ---:| ---:        | ---    | ---: | ---        | ---:     |  \n"
     )
     for i in range(30):
         member = members_dict[member_weights[i][0]]
         reply_msg += (
             f"| {i} "
-            f"| {member['qq_id']} "
             f"| {member['card'] if member['card'] is not None else member['nickname']} "
+            f"| {member['qq_id']} "
+            f"| {member['sb_id']} "
+            f"| {'☑️' if member['whitelisted'] else ''} "
             f"| {member['level']} "
             f"| {datetime.fromtimestamp(member['last_sent_time']).isoformat()} "
             f"| {round(member_weights[i][1])} "
@@ -69,7 +71,10 @@ def merge_onebot_data_with_db_result(
 ) -> JoinedGroupMemberInfo:
     maybe_onebot = deepcopy(onebot_data)
     qq_id = maybe_onebot.pop("user_id")
-    return {**maybe_onebot, "qq_id": qq_id, **(db_data or {})}
+    return_value = JoinedGroupMemberInfo(
+        **maybe_onebot, whitelisted=False, sb_id=None, qq_id=qq_id, **(db_data or {})
+    )
+    return return_value
 
 
 async def get_accounts_with_db_data(onebot_data: List[GroupMemberInfo]):
