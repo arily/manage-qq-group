@@ -8,7 +8,7 @@ import dotenv
 from nonebot.adapters.onebot.v11 import MessageSegment
 
 from models.db import Caches, Accounts
-from utils.web import screenshot_local_html, trans_md_to_html
+from utils.web import screenshot_local_html, render_md_to_html
 from . import PluginStatus
 
 
@@ -62,7 +62,7 @@ async def gen_kick_query_msg(members: List[JoinedGroupMemberInfo]):
             f"| {member['card'] if member['card'] is not None else member['nickname']} "
             f"| {member['qq_id']} "
             f"| {member['sb_id']} "
-            f"| {member['comment']} "
+            f"| {member['remark']} "
             f"| {'☑️' if member['whitelisted'] else ''} "
             f"| {member['level']} "
             f"| {datetime.fromtimestamp(member['last_sent_time']).isoformat()} "
@@ -71,7 +71,7 @@ async def gen_kick_query_msg(members: List[JoinedGroupMemberInfo]):
         )
     reply_msg += "  \n"
 
-    html = trans_md_to_html(reply_msg)
+    html = render_md_to_html(reply_msg)
     img_bin = await screenshot_local_html(html)
     return MessageSegment.image(
         file="base64://" + base64.b64encode(img_bin).decode(encoding="utf-8")
@@ -89,7 +89,7 @@ def merge_onebot_data_with_db_result(
         qq_id=db_data.qq_id or qq_id,
         whitelisted=db_data.whitelisted or False,
         sb_id=db_data.sb_id or None,
-        comment=db_data.comment or "",
+        remark=db_data.remark or "",
     )
     return return_value
 

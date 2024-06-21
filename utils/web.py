@@ -44,10 +44,10 @@ class HTML:
 
     @staticmethod
     def escape(s: str):
-        return s.replace('"', '"').replace('"', '"')
+        return s.replace('\"', '"').replace('"', '\"')
 
 
-def trans_md_to_html(md: str, custom_head: str = ""):
+def render_md_to_html(md: str, custom_head: str = ""):
     return HTML.html(
         HTML.head(HTML.style(open("resources/css/github-markdown.css").read())),
         custom_head,

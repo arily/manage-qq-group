@@ -11,7 +11,7 @@ class Accounts(Model):
     group_id = fields.IntField(index=True)
     qq_id = fields.IntField(index=True)
     sb_id = fields.IntField(null=True, index=True)
-    comment = fields.TextField(default="")
+    remark = fields.TextField(default="")
     whitelisted = fields.BooleanField(default=False)
 
 

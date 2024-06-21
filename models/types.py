@@ -23,7 +23,7 @@ class GroupMemberInfo(TypedDict):
 class JoinedGroupMemberInfo(GroupMemberInfo):
     user_id: None
     qq_id: int
-    comment: str
+    remark: str
     sb_id: Optional[int]
     whitelisted: Optional[bool]
     weight: int
