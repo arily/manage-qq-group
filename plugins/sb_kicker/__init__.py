@@ -12,7 +12,6 @@ from nonebot.message import run_postprocessor, run_preprocessor
 from nonebot.rule import Rule
 from nonebot.typing import T_State
 
-from models.enums import MemberStatus
 from utils.qq_helper import is_admin
 
 from .enum import PluginStatus
@@ -22,9 +21,16 @@ SB_GROUP_ID = int(os.getenv("SB_GROUP_ID") or "-1")
 
 
 class Action(str, Enum):
-    Notify = "N"
+    SyncEntries = "S"
+    MarkPendingRemoval = "M"
     Kick = "K"
 
+
+cn_names = {
+    Action.SyncEntries: '同步数据库',
+    Action.MarkPendingRemoval: '通知并标记',
+    Action.Kick: '移除',
+}
 
 actions = set(item for item in Action)
 
@@ -98,8 +104,11 @@ async def _(bot: OnebotV11Bot, state: T_State):
     await sb_kicker.send(msg)
 
 
-@sb_kicker_force.got("action", prompt="工作内容？通知 = N, 移除 = K")
-@sb_kicker.got("action", prompt="工作内容？通知 = N, 移除 = K")
+action_prompt = "工作内容? " + ", ".join([f"{cn_names[Action(v)]} = {Action(v).value}" for v in Action])
+
+
+@sb_kicker_force.got("action", prompt=action_prompt)
+@sb_kicker.got("action", prompt=action_prompt)
 async def select_operation(bot: OnebotV11Bot, state: T_State, action: Message = Arg()):
     maybe_action = action.extract_plain_text().strip()
 
@@ -123,36 +132,41 @@ async def _(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
         await sb_kicker.finish("操作超时，取消上一次待输入的sb群kick操作")
 
     try:
-        picked = parse_ranges(pending_range.extract_plain_text(), 0, len(members))
-        if min(*picked) <= 0:
+        picked_ids = parse_ranges(pending_range.extract_plain_text(), 0, len(members) - 1)
+        if min(*picked_ids) < 0:
             await sb_kicker.finish("取消本次操作, 长度不能为负")
-        if max(*picked) > len(members):
+        if max(*picked_ids) > len(members):
             await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
 
-        members = find_all(members, lambda m, i: i in picked)
-
-        print(members)
+        picked = find_all(members, lambda m, i: i in picked_ids)
 
         match state["action"]:
-            case Action.Notify:
+            case Action.SyncEntries:
+                for member in picked:
+                    member['status'] = MemberStatus.PendingRemoval
+                    await Accounts.update_or_create(**{k: v for k, v in member.items() if
+                                                       v is not None and k in ['created_at', 'group_id', 'id', 'qq_id',
+                                                                               'remark', 'sb_id', 'status',
+                                                                               'updated_at', 'whitelisted']})
+            case Action.MarkPendingRemoval:
                 try:
                     await (
                         Accounts
                         .filter(
-                            id__in=[member['id'] for member in members if member['id'] is not None]
+                            id__in=[member['id'] for member in picked if member['id'] is not None]
                         )
                         .update(
                             status=MemberStatus.PendingRemoval
                         )
                     )
 
-                    not_in_db = [member for member in members if member['id'] is None]
+                    not_in_db = [member for member in picked if member['id'] is None]
                     for member in not_in_db:
                         member['status'] = MemberStatus.PendingRemoval
                         await Accounts.create(**{k: v for k, v in member.items() if v is not None})
 
                     msg = "\n".join(
-                        [f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})" for member in members]
+                        [f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})" for member in picked]
                     )
 
                     await sb_kicker.send(
@@ -164,7 +178,7 @@ async def _(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
                     await sb_kicker.finish("操作失败，请查看日志")
             case Action.Kick:
                 try:
-                    for member in members:
+                    for member in picked:
                         await bot.set_group_kick(
                             group_id=SB_GROUP_ID,
                             user_id=member["qq_id"],
