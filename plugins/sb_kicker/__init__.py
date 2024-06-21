@@ -1,6 +1,4 @@
-import asyncio
 from enum import Enum
-from typing import TypedDict
 
 from loguru import logger
 from models.db import Admins
@@ -13,6 +11,8 @@ from nonebot.internal.params import Arg
 from nonebot.message import run_postprocessor, run_preprocessor
 from nonebot.rule import Rule
 from nonebot.typing import T_State
+
+from models.enums import MemberStatus
 from utils.qq_helper import is_admin
 
 from .enum import PluginStatus
@@ -110,45 +110,103 @@ async def select_operation(bot: OnebotV11Bot, state: T_State, action: Message = 
         await sb_kicker.finish("没有这个操作。")
 
 
+pending_prompt = "选择用户，输入id，可以输入 1,2,3; 3-10; 4-"
+
+
 @sb_kicker_force.got(
-    "pending_count", prompt="选择几个(从上到下)？\n输入任意非正整数取消"
+    "pending_range", prompt=pending_prompt
 )
-@sb_kicker.got("pending_count", prompt="选择几个(从上到下)？\n输入任意非正整数取消")
-async def _(bot: OnebotV11Bot, state: T_State, pending_count: Message = Arg()):
+@sb_kicker.got("pending_range", prompt=pending_prompt)
+async def _(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
+    members: list[JoinedGroupMemberInfo] = state['sorted']
     if datetime.now().timestamp() - state["trigger_time"] >= 60:
         await sb_kicker.finish("操作超时，取消上一次待输入的sb群kick操作")
 
     try:
-        int(pending_count.extract_plain_text())
-    except ValueError:
-        await sb_kicker.finish("取消本次操作")
+        picked = parse_ranges(pending_range.extract_plain_text(), 0, len(members))
+        if min(*picked) <= 0:
+            await sb_kicker.finish("取消本次操作, 长度不能为负")
+        if max(*picked) > len(members):
+            await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
 
-    pending_count = int(pending_count.extract_plain_text())
-    if pending_count <= 0:
-        await sb_kicker.finish("取消本次操作, 长度不能为负")
-    if pending_count > len(state["sorted"]):
-        await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
+        members = find_all(members, lambda m, i: i in picked)
 
-    try:
-        for i in range(pending_count):
-            member = state["sorted"][i]
-            match state["action"]:
-                case Action.Notify:
-                    pass
-                case Action.Kick:
-                    await bot.set_group_kick(
-                        group_id=SB_GROUP_ID,
-                        user_id=member["qq_id"],
-                        reject_add_request=False,
+        print(members)
+
+        match state["action"]:
+            case Action.Notify:
+                try:
+                    await (
+                        Accounts
+                        .filter(
+                            id__in=[member['id'] for member in members if member['id'] is not None]
+                        )
+                        .update(
+                            status=MemberStatus.PendingRemoval
+                        )
                     )
+
+                    not_in_db = [member for member in members if member['id'] is None]
+                    for member in not_in_db:
+                        member['status'] = MemberStatus.PendingRemoval
+                        await Accounts.create(**{k: v for k, v in member.items() if v is not None})
+
+                    msg = "\n".join(
+                        [f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})" for member in members]
+                    )
+
                     await sb_kicker.send(
-                        f"已选择 {member['card'] if member['card'] is not None else member['nickname']}"
-                        f" （{member['qq_id']}) [{i + 1} / {pending_count}]"
+                        "通知以下用户（手动操作）：\n"
+                        + msg
                     )
-                case _:
-                    await sb_kicker.send('Unexpected Action')
-            await asyncio.sleep(1)
+                except Exception as e:
+                    logger.opt(exception=True).error(e)
+                    await sb_kicker.finish("操作失败，请查看日志")
+            case Action.Kick:
+                try:
+                    for member in members:
+                        await bot.set_group_kick(
+                            group_id=SB_GROUP_ID,
+                            user_id=member["qq_id"],
+                            reject_add_request=False,
+                        )
+                        await sb_kicker.send(
+                            f"已选择 {member['card'] if member['card'] is not None else member['nickname']}"
+                            f" （{member['qq_id']})"
+                        )
+
+                except Exception as e:
+                    logger.opt(exception=True).error(e)
+                    await sb_kicker.finish("操作失败，请查看日志")
+            case _:
+                await sb_kicker.send('Unexpected Action')
+
         await sb_kicker.send("完了")
     except Exception as e:
-        logger.trace(e)
-        await sb_kicker.finish("操作失败，请查看日志")
+        logger.opt(exception=True).error(e)
+        await sb_kicker.finish("取消本次操作")
+
+
+def parse_ranges(input_str: str, min_range: int, max_range: int):
+    # Split the input string by commas
+    parts = input_str.split(',')
+    result = set()
+
+    # Process each part
+    for part in parts:
+        part = part.strip()
+        if '-' in part:
+            start, end = part.split('-')
+            start = int(start) if start else min_range
+            end = int(end) if end else max_range
+
+            if start is not None and end is not None:
+                result.update([*range(start, end)])
+            elif start is not None:
+                result.add(start)
+        else:
+            if part:
+                result.add(int(part))
+
+    # Convert the set to a sorted list
+    return sorted(result)

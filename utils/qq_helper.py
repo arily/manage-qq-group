@@ -1,5 +1,4 @@
 from nonebot.adapters.onebot.v11 import Bot as OnebotV11Bot
-import nonebot
 
 
 async def is_admin(bot: OnebotV11Bot, group_id: int):

@@ -62,7 +62,7 @@ def render_md_to_html(md: str, custom_head: str = ""):
     )
 
 
-async def screenshot_local_html(html: str):
+async def render_html_as_image(html: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()

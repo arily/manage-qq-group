@@ -7,12 +7,15 @@ class Accounts(Model):
     class Meta:
         table = "accounts"
 
-    id = fields.IntField(pk=True)
+    id = fields.IntField(pk=True, generated=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
     group_id = fields.IntField(index=True)
     qq_id = fields.IntField(index=True)
     sb_id = fields.IntField(null=True, index=True)
-    remark = fields.TextField(default="")
+    status = fields.IntEnumField(MemberStatus)
     whitelisted = fields.BooleanField(default=False)
+    remark = fields.TextField(default="")
 
 
 class Admins(Model):
@@ -28,7 +31,7 @@ class Logs(Model):
         table = "logs"
 
     id = fields.IntField(pk=True)
-    time = fields.DatetimeField()
+    time = fields.DatetimeField(auto_now=True)
     account_id = fields.IntField(index=True)
     admin_id = fields.IntField(index=True)
     op = fields.CharEnumField(OpType)
