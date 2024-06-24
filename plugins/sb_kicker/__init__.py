@@ -1,200 +1,138 @@
 import asyncio
-import base64
-from datetime import datetime, timezone
-from typing import List, TypedDict, Any
+from typing import Tuple, List
 
-import mistune
-from alicebot import Plugin
-from alicebot.adapter.cqhttp import CQHTTPAdapter
-from alicebot.adapter.cqhttp.event import PrivateMessageEvent
-from alicebot.adapter.cqhttp.message import CQHTTPMessageSegment
-from alicebot.exceptions import GetEventTimeout
-from playwright.async_api import async_playwright
-from .db import Accounts, Admins
-from .html import HTML as h
+from loguru import logger
+from nonebot import on_fullmatch
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, Bot as OnebotV11Bot
+from nonebot.adapters.onebot.v11.message import Message
+from nonebot.internal.matcher import Matcher
+from nonebot.internal.params import Arg
+from nonebot.message import run_postprocessor, run_preprocessor
+from nonebot.rule import Rule
+from nonebot.typing import T_State
 
-from tortoise.expressions import F
-
-
-class GetGroupMemberList(TypedDict):
-    user_id: int
-    card: Any
-    nickname: str
-    last_sent_time: float
-    level: int
+from models.enums import UserPrivilegeEnum
+from utils.qq_helper import is_admin, get_multi_group_member_list
+from .enum import PluginStatus
+from models.db import UserPrivileges
+from .utils import *
 
 
-class SBKicker(Plugin):
-    priority: int = 0
-    block: bool = False
-    trigger = "sb群送人"
-    group = 792778662
-    _cached_head = ""
+async def checker_is_sender_bot_admin(bot: OnebotV11Bot, event: GroupMessageEvent) -> bool:
+    return str(event.sender.user_id) in bot.config.superusers
 
-    @property
-    def cached_head(self):
-        return self._set_head() if self._cached_head == "" else self._cached_head
 
-    def _set_head(self) -> str:
-        self._cached_head = h.head(
-            h.style(open("libs/markdown/github-markdown.css").read())
+async def checker_is_bot_group_admin(bot: OnebotV11Bot, event: GroupMessageEvent):
+    return await is_admin(bot, event.group_id)
+
+
+async def checker_is_plugin_idle() -> bool:
+    cache, _ = await Caches.get_or_create(
+        key="sb_kicker_status",
+        defaults={
+            "value": PluginStatus.Idle.value
+        }
+    )
+    return cache.value == PluginStatus.Idle.value
+
+
+sb_kicker = on_fullmatch(
+    "!sb_kicker",
+    rule=Rule(checker_is_sender_bot_admin, checker_is_bot_group_admin, checker_is_plugin_idle),
+)
+
+sb_kicker_force = on_fullmatch(
+    "!sb_kicker --force"
+)
+
+
+@run_preprocessor
+async def _(matcher: Matcher):
+    if isinstance(matcher, sb_kicker):
+        await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Running.value)
+
+
+@run_postprocessor
+async def _(matcher: Matcher):
+    if isinstance(matcher, sb_kicker):
+        await Caches.filter(key="sb_kicker_status").update(value=PluginStatus.Idle.value)
+
+
+@sb_kicker_force.handle()
+@sb_kicker.handle()
+async def _(bot: OnebotV11Bot, event: GroupMessageEvent, state: T_State):
+    await sb_kicker.send("稍等...")
+
+    whitelist: List[Tuple[int, int]] = await UserPrivileges.filter(
+        group_id__in=bot.config.sb_group,
+        privilege=UserPrivilegeEnum.KickWhitelist
+    ).values_list("qq_id", "group_id")
+
+    filtered_members = list(
+        filter(
+            lambda x: (
+                    x["user_id"] not in bot.config.superusers
+                    and x["role"] not in ["owner", "admin"]
+                    and (x["user_id"], x["group_id"]) not in whitelist
+            ),
+            await bot.get_group_member_list(group_id=event.group_id)
         )
-        return self._cached_head
+    )
 
-    def __init_state__(self):
-        return {"status": 0}
+    current_time = datetime.now().timestamp()
 
-    async def handle(self) -> None:
-        event: PrivateMessageEvent = self.event
-        adapter: CQHTTPAdapter = event.adapter
+    state["trigger_time"] = current_time
+    state["member_weights"] = sorted(
+        [(m["user_id"], calculate_kick_weight(current_time, m)) for m in filtered_members],
+        key=lambda x: x[1],
+        reverse=True
+    )
 
-        if self.state["status"] == 1:
-            await event.reply("上次的还在T啊，要不等会?")
-            return
+    state["members_dict"] = {
+        member["user_id"]: member for member in filtered_members
+    }  # 将成员列表转换为以 user_id 为键的字典 提性能，也方便查询
 
-        await event.reply("稍等...")
+    msg = await gen_kick_query_msg(state["members_dict"], state["member_weights"])
 
-        resp: List[GetGroupMemberList] = await adapter.call_api(
-            "get_group_member_list", group_id=self.group
-        )
+    await sb_kicker.send(msg)
 
-        current_time = datetime.now(timezone.utc).timestamp()
-        member_weights = [
-            (member["user_id"], self.calculate_weight(current_time, member))
-            for member in resp
-        ]
-        member_weights = sorted(member_weights, key=lambda x: x[1], reverse=True)
 
-        members_dict = {
-            member["user_id"]: member for member in resp
-        }  # 将成员列表转换为以 user_id 为键的字典 提性能
-        reply_msg = (
-            "# 最应该送走的用户，权重越大越该送  \n\n"
-            "| ID | qq号 | 昵称 | 等级 | 最后发言时间 | 计算的权重 |  \n"
-            "| --- | --- | --- | --- | --- | --- |  \n"
-        )
-        for i in range(30):
-            member = members_dict[member_weights[i][0]]
-            reply_msg += (
-                f"| {i} "
-                f"| {member['user_id']} "
-                f"| {member['card'] if member['card'] is not None else member['nickname']} "
-                f"| {member['level']} "
-                f"| {datetime.fromtimestamp(member['last_sent_time']).isoformat()} "
-                f"| {round(member_weights[i][1])} "
-                f"|  \n"
+@sb_kicker_force.got("kick_count", prompt="输入整数n，若n是正整数表示送走n个群友\n若n是负整数表示通知 |n| 个群友\n(按列表从上到下)\n输入任意非整数取消")
+@sb_kicker.got("kick_count", prompt="输入整数n，若n是正整数表示送走n个群友\n若n是负整数表示通知 |n| 个群友\n(按列表从上到下)\n输入任意非整数取消")
+async def _(bot: OnebotV11Bot, state: T_State, kick_count: Message = Arg()):
+    if datetime.now().timestamp() - state["trigger_time"] >= 60:
+        await sb_kicker.finish("操作超时，取消上一次待输入的sb群kick操作")
+
+    try:
+        int(kick_count.extract_plain_text())
+    except ValueError:
+        await sb_kicker.finish("取消本次操作")
+
+    kick_count = int(kick_count.extract_plain_text())
+    if kick_count == 0:
+        await sb_kicker.finish("取消本次操作")
+    if kick_count > len(state["member_weights"]) or -kick_count > len(state["member_weights"]):
+        await sb_kicker.finish("取消本次操作，超出范围")
+
+    if kick_count < 0:
+        await sb_kicker.finish("取消本次操作")
+        # TODO 通知
+
+    try:
+        for i in range(kick_count):
+            member = state["members_dict"][state["member_weights"][i][0]]
+            await bot.set_group_kick(
+                group_id=member["group_id"],
+                user_id=member["user_id"],
+                reject_add_request=False
             )
-        reply_msg += "  \n"
-
-        b64content = base64.b64encode(
-            await self.screenshot(
-                h.html(
-                    self.cached_head,
-                    h.body(
-                        h.tag(
-                            "article",
-                            mistune.html(reply_msg),
-                            class_name="markdown-body",
-                        ),
-                        style="padding: 30px",
-                    ),
-                )
-            )
-        ).decode("utf-8")
-
-        await event.reply(CQHTTPMessageSegment.image(f"base64://{b64content}"))
-        await self.sync_members(resp)
-
-        while True:
-            try:
-                ask_answer = await event.ask(
-                    "送走几个(从上到下)？\n输入no取消(180s后自动取消)", timeout=180
-                )
-            except GetEventTimeout:
-                return
-            else:
-                if ask_answer.get_plain_text() == "no":
-                    await event.reply("取消送人")
-                    return
-                try:
-                    int(ask_answer.get_plain_text())
-                except ValueError:
-                    await event.reply("再试一次，能不能输个数字？")
-                    await asyncio.sleep(1)
-                else:
-                    break
-
-        try:
-            self.state["status"] = 1
-            for i in range(int(ask_answer.get_plain_text())):
-                await adapter.call_api(
-                    "set_group_kick",
-                    group_id=self.group,
-                    user_id=member_weights[i][0],
-                    reject_add_request=False,
-                )  # noqa
-                await event.reply(
-                    f"已送走{members_dict[member_weights[i][0]]['card']}({member_weights[i][0]}) [{i + 1}/{int(ask_answer.get_plain_text())}]"
-                    # noqa
-                )
-                await asyncio.sleep(3)
-            await event.reply("送完了")
-        finally:
-            self.state["status"] = 0
-
-    async def rule(self) -> bool:
-        if not isinstance(self.event, PrivateMessageEvent):
-            return False
-
-        event: PrivateMessageEvent = self.event
-
-        if not await self.is_admin(event.sender.user_id):
-            return False
-
-        if event.message.get_plain_text().strip() != self.trigger:
-            return False
-
-        return True
-
-    async def sync_members(self, members: List[GetGroupMemberList] = None):
-        if members is None:
-            members = await self.event.adapter.call_api(
-                "get_group_member_list", group_id=self.group
+            await sb_kicker.send(
+                f"已送走 {member['card'] if member['card'] is not None else member['nickname']}"
+                f" （{member['user_id']}) [{i + 1} / {kick_count}]"
             )
 
-        existing_accounts = Accounts.filter(
-            F(Accounts.group_id == self.group),
-            F(Accounts.qq_id).contains([member["user_id"] for member in members]),
-        )
-
-        existing_ids = [acc.qq_id for acc in existing_accounts]
-
-        await Accounts.bulk_create(
-            Accounts(group_id=self.group, qq_id=member["user_id"])
-            for member in members
-            if member["user_id"] not in existing_ids
-        )
-
-    @staticmethod
-    def calculate_weight(current_time: float, member):
-        if member is None:
-            return 0
-
-        inactive_days = (current_time - member["last_sent_time"]) / (60 * 60 * 24)
-
-        weight = inactive_days * (101 - int(member["level"]))
-        return weight
-
-    @staticmethod
-    async def is_admin(qq_id: int):
-        return await Admins.exists(qq_id=qq_id)
-
-    @staticmethod
-    async def screenshot(content: str):
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            page = await context.new_page()
-            await page.goto("about:blank")
-            await page.set_content(content)
-            return await page.screenshot(full_page=True)
+            await asyncio.sleep(1)
+        await sb_kicker.send("送完了")
+    except Exception as e:
+        logger.trace(e)
+        await sb_kicker.finish("操作失败，请查看日志")
