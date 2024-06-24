@@ -87,6 +87,7 @@ async def _(bot: OnebotV11Bot, state: T_State):
 
     resp = await bot.get_group_member_list(group_id=SB_GROUP_ID)
     members = await get_accounts_with_db_data(resp)
+    await sync_in_group(members)
 
     current_time = datetime.now().timestamp()
     state["trigger_time"] = current_time
@@ -99,24 +100,9 @@ async def _(bot: OnebotV11Bot, state: T_State):
 
     state['sorted'] = state["sorted"][:30]
 
-    msg = await gen_kick_query_msg(state["sorted"])
+    msg = await gen_kick_query_img(title="潜水榜", members=state["sorted"])
 
     await sb_kicker.send(msg)
-
-
-action_prompt = "工作内容? " + ", ".join([f"{cn_names[Action(v)]} = {Action(v).value}" for v in Action])
-
-
-@sb_kicker_force.got("action", prompt=action_prompt)
-@sb_kicker.got("action", prompt=action_prompt)
-async def select_operation(bot: OnebotV11Bot, state: T_State, action: Message = Arg()):
-    maybe_action = action.extract_plain_text().strip()
-
-    if maybe_action in actions:
-        state["action"] = action = Action(maybe_action)
-        await sb_kicker.send(action.name)
-    else:
-        await sb_kicker.finish("没有这个操作。")
 
 
 pending_prompt = "选择用户，输入id，可以输入 1,2,3; 3-10; 4-"
@@ -126,28 +112,61 @@ pending_prompt = "选择用户，输入id，可以输入 1,2,3; 3-10; 4-"
     "pending_range", prompt=pending_prompt
 )
 @sb_kicker.got("pending_range", prompt=pending_prompt)
-async def _(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
+async def prompt_range(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
     members: list[JoinedGroupMemberInfo] = state['sorted']
     if datetime.now().timestamp() - state["trigger_time"] >= 60:
         await sb_kicker.finish("操作超时，取消上一次待输入的sb群kick操作")
 
     try:
         picked_ids = parse_ranges(pending_range.extract_plain_text(), 0, len(members) - 1)
-        if min(*picked_ids) < 0:
+        if min(*picked_ids, 0) < 0:
             await sb_kicker.finish("取消本次操作, 长度不能为负")
-        if max(*picked_ids) > len(members):
+        if max(*picked_ids, len(members)) > len(members):
             await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
 
         picked = find_all(members, lambda m, i: i in picked_ids)
+        state['marked'] = picked
+    except Exception as e:
+        logger.opt(exception=True).error(e)
+        await sb_kicker.finish("取消本次操作")
 
+
+action_prompt = "工作内容? " + ", ".join([f"{cn_names[Action(v)]} = {Action(v).value}" for v in Action])
+
+
+@sb_kicker_force.got("action", prompt=action_prompt)
+@sb_kicker.got("action", prompt=action_prompt)
+async def select_operation(bot: OnebotV11Bot, state: T_State, action: Message = Arg()):
+    maybe_action = action.extract_plain_text().strip().upper()
+    members: list[JoinedGroupMemberInfo] = state['marked']
+
+    if maybe_action in actions:
+        state["action"] = action = Action(maybe_action)
+        img2 = await gen_kick_query_img(title=cn_names[action], members=members)
+        await sb_kicker.send(img2)
+    else:
+        await sb_kicker.finish("没有这个操作。")
+
+
+confirm_prompt = 'confirm? ok = ok, anything else = cancel'
+
+
+@sb_kicker_force.got("confirm", prompt=confirm_prompt)
+@sb_kicker.got("confirm", prompt=confirm_prompt)
+async def work(bot: OnebotV11Bot, state: T_State, confirm: Message = Arg()):
+    await sb_kicker.finish('canceled') if confirm.extract_plain_text().strip().lower() != 'ok' else None
+    picked: List[JoinedGroupMemberInfo] = state['marked']
+    try:
         match state["action"]:
             case Action.SyncEntries:
                 for member in picked:
                     member['status'] = MemberStatus.PendingRemoval
-                    await Accounts.update_or_create(**{k: v for k, v in member.items() if
-                                                       v is not None and k in ['created_at', 'group_id', 'id', 'qq_id',
-                                                                               'remark', 'sb_id', 'status',
-                                                                               'updated_at', 'whitelisted']})
+                    await Accounts.update_or_create(**{
+                        k: v for k, v in member.items() if (
+                                v is not None and
+                                k in Accounts._meta.fields_map.keys()
+                        )
+                    })
             case Action.MarkPendingRemoval:
                 try:
                     await (
@@ -166,7 +185,7 @@ async def _(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
                         await Accounts.create(**{k: v for k, v in member.items() if v is not None})
 
                     msg = "\n".join(
-                        [f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})" for member in picked]
+                        [fmt_user(member) for member in picked]
                     )
 
                     await sb_kicker.send(
@@ -178,27 +197,31 @@ async def _(bot: OnebotV11Bot, state: T_State, pending_range: Message = Arg()):
                     await sb_kicker.finish("操作失败，请查看日志")
             case Action.Kick:
                 try:
+                    succeed: List[JoinedGroupMemberInfo] = []
                     for member in picked:
+                        await sb_kicker.send(
+                            cn_names[Action.Kick] + fmt_user(member)
+                        )
                         await bot.set_group_kick(
                             group_id=SB_GROUP_ID,
                             user_id=member["qq_id"],
                             reject_add_request=False,
                         )
-                        await sb_kicker.send(
-                            f"已选择 {member['card'] if member['card'] is not None else member['nickname']}"
-                            f" （{member['qq_id']})"
-                        )
+                        succeed.append(member)
+
+                    await Accounts.filter(id__in=[member['id'] for member in succeed]).update(
+                        status=MemberStatus.Removed)
 
                 except Exception as e:
                     logger.opt(exception=True).error(e)
-                    await sb_kicker.finish("操作失败，请查看日志")
+                    await sb_kicker.finish("操作失败，请查看日志。")
             case _:
-                await sb_kicker.send('Unexpected Action')
+                await sb_kicker.send('Unknown action')
 
-        await sb_kicker.send("完了")
+        await sb_kicker.send("完了。")
     except Exception as e:
         logger.opt(exception=True).error(e)
-        await sb_kicker.finish("取消本次操作")
+        await sb_kicker.finish("出现未知错误，请查看日志。")
 
 
 def parse_ranges(input_str: str, min_range: int, max_range: int):
@@ -224,3 +247,24 @@ def parse_ranges(input_str: str, min_range: int, max_range: int):
 
     # Convert the set to a sorted list
     return sorted(result)
+
+
+def fmt_user(member: JoinedGroupMemberInfo):
+    return f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})"
+
+
+async def sync_in_group(members: List[JoinedGroupMemberInfo]):
+    await (
+        Accounts
+        .filter(
+            id__in=[members['id'] for members in members],
+            status=MemberStatus.Removed
+        )
+        .update(
+            status=MemberStatus.InGroup
+        )
+    )
+    for member in members:
+        member['status'] = MemberStatus.InGroup \
+            if member['status'] == MemberStatus.Removed \
+            else member['status']

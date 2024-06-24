@@ -58,25 +58,25 @@ async def check_plugin_running() -> bool:
     return False
 
 
-async def gen_kick_query_msg(members: List[JoinedGroupMemberInfo]):
+async def gen_kick_query_img(title: str, members: List[JoinedGroupMemberInfo]):
     header = (
-        "# 潜水榜 \n\n"
-        "| ID | 昵称 | QQ号 | SB服绑定的ID | 当前状态 | 白名单 | 备注 | QQ等级 | 最后发言时间 | 计算的权重 |  \n"
-        "|---:| --- | ----:| -----------:| ------ | :---: | --- | ----: | ---------- | ---------:|  \n"
+        f"# {title} \n\n"
+        "| ID | 白名单 | 昵称 | SB服ID | QQ | QQ等级 | 状态 | 备注 | 最后发言时间 | 计算的权重 |  \n"
+        "|---:| :---: | --- | ------:| --:| -----:| ---- | --- | ---------- | --------:|  \n"
     )
 
     items = (
         (
             f"| {i} "
+            f"| {'☑️' if member['whitelisted'] else ''} "
             f"| {member['card'] if member['card'] is not None else member['nickname']} "
-            f"| {member['qq_id']} "
-            f"| {member['sb_id']} "
+            f"| `{member['sb_id']}` "
+            f"| `{member['qq_id']}` "
+            f"| `{member['level']}` "
             f"| {MemberStatus(member['status']).name if member['status'] is not None and member['status'] in MemberStatus else '-'} "
             f"| {member['remark']} "
-            f"| {'☑️' if member['whitelisted'] else ''} "
-            f"| {member['level']} "
-            f"| {datetime.fromtimestamp(member['last_sent_time']).isoformat()} "
-            f"| {member['weight']:9.2f} "
+            f"| `{datetime.fromtimestamp(member['last_sent_time'])}` "
+            f"| `{member['weight']:9.2f}` "
             f"|"
         ) for i, member in enumerate(members)
     )

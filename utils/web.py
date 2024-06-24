@@ -1,5 +1,5 @@
 import mistune
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, ViewportSize
 
 
 class HTML:
@@ -65,7 +65,7 @@ def render_md_to_html(md: str, custom_head: str = ""):
 async def render_html_as_image(html: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
+        context = await browser.new_context(viewport=ViewportSize(width=1280, height=10))
         page = await context.new_page()
         await page.goto("about:blank")
         await page.set_content(html)
