@@ -6,10 +6,14 @@ class OperationEnum(IntEnum):
     KickOutGroup = 1
 
 
-class UserPrivilegeEnum(IntEnum):
-    KickWhitelist = 0
-
-
 class BotOperationPrivilegeEnum(IntEnum):
     All = 0
     Zero = 1
+
+
+class SbKickerMarkEnum(IntEnum):
+    Whitelist = 0
+    KickExemptionLevelPromotion = 1
+    KickExemptionLevelDemotion = 2
+    HaveNotified = 3
+

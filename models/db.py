@@ -25,16 +25,6 @@ class BotOperationPrivileges(Model):
     comment = fields.TextField(null=True)
 
 
-class UserPrivileges(Model):
-    class Meta:
-        table = "user_privileges"
-
-    id = fields.IntField(pk=True)
-    qq_id = fields.IntField(index=True)
-    group_id = fields.IntField(index=True)
-    privilege = fields.IntEnumField(UserPrivilegeEnum, index=True)
-
-
 class Logs(Model):
     class Meta:
         table = "logs"
@@ -54,3 +44,13 @@ class Caches(Model):
     id = fields.IntField(pk=True)
     key = fields.CharField(max_length=255, index=True)
     value = fields.TextField()
+
+
+class SbKickerMarks(Model):
+    class Meta:
+        table = "sb_kicker"
+
+    id = fields.IntField(pk=True)
+    qq_id = fields.IntField(index=True)
+    group_id = fields.IntField(index=True)
+    mark_type = fields.IntEnumField(SbKickerMarkEnum, index=True)
