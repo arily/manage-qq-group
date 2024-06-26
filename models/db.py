@@ -3,12 +3,13 @@ from tortoise import fields
 from .enums import *
 
 
-class Users(Model):
+class SbUsers(Model):
     class Meta:
-        table = "users"
+        table = "sb_users"
 
     id = fields.IntField(pk=True)
-    group_id = fields.IntField(index=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
     qq_id = fields.IntField(index=True)
     sb_id = fields.IntField(null=True, index=True)
     comment = fields.TextField(null=True)

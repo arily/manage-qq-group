@@ -1,13 +1,13 @@
-from typing import Literal
-
 from arclet.alconna import *
 
 
 alc = Alconna(
+    [""],
     "sb-kicker",
     Subcommand(
         "show",
         Args["content", str],
+        Option("-g|--group_id", Args["group_id", str]),
         help_text="显示自定义查询表"
     ),
     Subcommand(

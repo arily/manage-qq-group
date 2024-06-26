@@ -1,6 +1,5 @@
 from models.data import GroupUser
 from models.db import Caches
-from .enums import PluginStatus
 
 
 def calculate_kick_weight(current_time: float, user: GroupUser):
@@ -12,8 +11,8 @@ def calculate_kick_weight(current_time: float, user: GroupUser):
     # 用户每增加一个level 权重降低1%，同时减去30天的潜水时长
 
     weight = (
-            inactive_seconds * ((100 - int(user.level)) / 100)
-            - int(user.level) * 30 * 24 * 60 * 60
+        inactive_seconds * ((100 - int(user.level)) / 100)
+        - int(user.level) * 30 * 24 * 60 * 60
     )
 
     if user["whitelisted"]:  # TODO: 改
@@ -31,13 +30,4 @@ def calculate_kick_weight(current_time: float, user: GroupUser):
     #         weight *= 0.01
 
     return weight / 10000
-
-
-async def check_plugin_running() -> bool:
-    cache, _ = await Caches.get_or_create(
-        key="sb_kicker_status", defaults={"value": PluginStatus.Idle.value}
-    )
-    if cache.value == PluginStatus.Running.value:
-        return True
-    return False
 
