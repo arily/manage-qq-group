@@ -33,7 +33,7 @@ sb_kicker = on_fullmatch(
     rule=Rule(is_sender_admin, is_bot_group_admin, is_plugin_idle),
 )
 
-sb_kicker_force = on_fullmatch("sb服送人 --force")
+sb_kicker_force = on_fullmatch("sb服送人 --force", rule=lambda: False)
 
 
 @run_preprocessor
