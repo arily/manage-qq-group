@@ -12,7 +12,7 @@ from nonebot.rule import Rule
 from nonebot.typing import T_State
 from result import as_result
 
-from models import Accounts
+from models import Accounts, MemberStatus
 from plugins.sb_kicker import merge_onebot_data_with_db_result
 from utils import J_G_M_to_saveable
 from utils.qq_helper import fmt_user, is_sender_admin
@@ -77,8 +77,14 @@ async def fin(bot: OnebotV11Bot, state: T_State):
         merged_view['sb_id'] = parsed['sb_id'] or merged_view['sb_id']
 
         write_data = J_G_M_to_saveable(merged_view)
-        await Accounts.update_or_create(id=merged_view['id'], defaults=write_data)
+
+        if db_user is None:
+            await Accounts.create(**write_data, status=MemberStatus.InGroup)
+        else:
+            await Accounts.filter(id=db_user.id).update(**write_data, status=MemberStatus.InGroup)
+
         await bind.send(fmt_user(merged_view))
     except Exception as e:
         logger.opt(exception=True).error(e)
         await bind.send('error occurred')
+
