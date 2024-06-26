@@ -15,6 +15,8 @@ from . import PluginStatus
 from models.types import GroupMemberInfo, JoinedGroupMemberInfo
 from inspect import signature
 
+T = TypeVar("T")
+
 dotenv.load_dotenv()
 SB_GROUP_ID = int(os.getenv("SB_GROUP_ID"))
 
@@ -124,9 +126,6 @@ async def get_accounts_with_db_data(onebot_data: List[GroupMemberInfo]):
     ]
 
 
-T = TypeVar("T")
-
-
 def find_in(
         _list: List[T],
         matcher: Callable[[], bool] | Callable[[T], bool] | Callable[[T, int], bool] | Callable[[T, int, List[T]], bool]
@@ -137,7 +136,7 @@ def find_in(
             return item
 
 
-def find_all(
+def filter_in(
         _list: List[T],
         matcher: Callable[[], bool] | Callable[[T], bool] | Callable[[T, int], bool] | Callable[[T, int, List[T]], bool]
 ) -> List[T]:

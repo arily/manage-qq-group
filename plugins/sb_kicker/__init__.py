@@ -1,10 +1,8 @@
-from enum import Enum
-
 from loguru import logger
-from models.db import Admins
+
+from models import sync_in_group
 from nonebot import on_fullmatch
 from nonebot.adapters.onebot.v11 import Bot as OnebotV11Bot
-from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.internal.matcher import Matcher
 from nonebot.internal.params import Arg
@@ -12,44 +10,16 @@ from nonebot.message import run_postprocessor, run_preprocessor
 from nonebot.rule import Rule
 from nonebot.typing import T_State
 
-from utils.qq_helper import is_admin
-
-from .enum import PluginStatus
+from utils import parse_ranges, J_G_M_to_saveable
+from utils.qq_helper import fmt_user, is_sender_admin, is_bot_group_admin
+from .enum import PluginStatus, Action, cn_names, actions
 from .utils import *
 
+dotenv.load_dotenv()
 SB_GROUP_ID = int(os.getenv("SB_GROUP_ID") or "-1")
 
 
-class Action(str, Enum):
-    SyncEntries = "S"
-    MarkPendingRemoval = "M"
-    Kick = "K"
-
-
-cn_names = {
-    Action.SyncEntries: '同步数据库',
-    Action.MarkPendingRemoval: '通知并标记',
-    Action.Kick: '移除',
-}
-
-actions = set(item for item in Action)
-
-
-# class State(TypedDict):
-#     trigger_time: float
-#     sorted: List[JoinedGroupMemberInfo]
-#     action: Action
-
-
-async def checker_common(event: MessageEvent) -> bool:
-    return await Admins.exists(qq_id=event.sender.user_id)
-
-
-async def checker_is_admin(bot: OnebotV11Bot):
-    return await is_admin(bot, SB_GROUP_ID)
-
-
-async def checker_is_plugin_idle() -> bool:
+async def is_plugin_idle() -> bool:
     cache, _ = await Caches.get_or_create(
         key="sb_kicker_status", defaults={"value": PluginStatus.Idle.value}
     )
@@ -58,7 +28,7 @@ async def checker_is_plugin_idle() -> bool:
 
 sb_kicker = on_fullmatch(
     "sb服送人",
-    rule=Rule(checker_common, checker_is_admin, checker_is_plugin_idle),
+    rule=Rule(is_sender_admin, is_bot_group_admin, is_plugin_idle),
 )
 
 sb_kicker_force = on_fullmatch("sb服送人 --force")
@@ -124,7 +94,7 @@ async def prompt_range(bot: OnebotV11Bot, state: T_State, pending_range: Message
         if max(*picked_ids, len(members)) > len(members):
             await sb_kicker.finish("取消本次操作, 尝试踢出太多群友")
 
-        picked = find_all(members, lambda m, i: i in picked_ids)
+        picked = filter_in(members, lambda m, i: i in picked_ids)
         state['marked'] = picked
     except Exception as e:
         logger.opt(exception=True).error(e)
@@ -161,12 +131,7 @@ async def work(bot: OnebotV11Bot, state: T_State, confirm: Message = Arg()):
             case Action.SyncEntries:
                 for member in picked:
                     member['status'] = MemberStatus.PendingRemoval
-                    await Accounts.update_or_create(**{
-                        k: v for k, v in member.items() if (
-                                v is not None and
-                                k in Accounts._meta.fields_map.keys()
-                        )
-                    })
+                    await Accounts.update_or_create(**J_G_M_to_saveable(member))
             case Action.MarkPendingRemoval:
                 try:
                     await (
@@ -222,49 +187,3 @@ async def work(bot: OnebotV11Bot, state: T_State, confirm: Message = Arg()):
     except Exception as e:
         logger.opt(exception=True).error(e)
         await sb_kicker.finish("出现未知错误，请查看日志。")
-
-
-def parse_ranges(input_str: str, min_range: int, max_range: int):
-    # Split the input string by commas
-    parts = input_str.split(',')
-    result = set()
-
-    # Process each part
-    for part in parts:
-        part = part.strip()
-        if '-' in part:
-            start, end = part.split('-')
-            start = int(start) if start else min_range
-            end = int(end) if end else max_range
-
-            if start is not None and end is not None:
-                result.update([*range(start, end)])
-            elif start is not None:
-                result.add(start)
-        else:
-            if part:
-                result.add(int(part))
-
-    # Convert the set to a sorted list
-    return sorted(result)
-
-
-def fmt_user(member: JoinedGroupMemberInfo):
-    return f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})"
-
-
-async def sync_in_group(members: List[JoinedGroupMemberInfo]):
-    await (
-        Accounts
-        .filter(
-            id__in=[members['id'] for members in members],
-            status=MemberStatus.Removed
-        )
-        .update(
-            status=MemberStatus.InGroup
-        )
-    )
-    for member in members:
-        member['status'] = MemberStatus.InGroup \
-            if member['status'] == MemberStatus.Removed \
-            else member['status']

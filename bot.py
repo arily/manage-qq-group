@@ -1,4 +1,3 @@
-import dotenv
 import nonebot
 from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 from init.database import init as database_init, disconnect as database_disconnect
