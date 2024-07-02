@@ -13,7 +13,9 @@ SB_GROUP_ID = int(os.getenv("SB_GROUP_ID") or "-1")
 
 async def is_admin(bot: OnebotV11Bot, group_id: int):
     try:
-        self_info = await bot.get_group_member_info(group_id=group_id, user_id=int(bot.self_id))
+        self_info = await bot.get_group_member_info(
+            group_id=group_id, user_id=int(bot.self_id)
+        )
         if self_info["role"] in ["owner", "admin"]:
             return True
         return False
@@ -21,8 +23,8 @@ async def is_admin(bot: OnebotV11Bot, group_id: int):
         return False
 
 
-def fmt_user(member: JoinedGroupMemberInfo):
-    return f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']})"
+def fmt_user(member: JoinedGroupMemberInfo, private=False):
+    return f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']}{', ' + member['remark'] if private and member['remark'] != '' else ''})"
 
 
 async def is_sender_admin(event: MessageEvent) -> bool:
