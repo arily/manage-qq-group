@@ -24,7 +24,7 @@ async def is_admin(bot: OnebotV11Bot, group_id: int):
 
 
 def fmt_user(member: JoinedGroupMemberInfo, private=False):
-    return f"{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']}{', ' + member['remark'] if private and member['remark'] != '' else ''})"
+    return f"{'[!]' if member['whitelisted'] else ''}{member['nickname']}(qq = {member['qq_id']}, sb = {member['sb_id']}{', ' + member['remark'] if private and member['remark'] != '' else ''})"
 
 
 async def is_sender_admin(event: MessageEvent) -> bool:

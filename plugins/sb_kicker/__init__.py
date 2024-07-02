@@ -29,7 +29,7 @@ async def is_plugin_idle() -> bool:
 
 
 sb_kicker = on_fullmatch(
-    "sbrank",
+    "sb rank",
     rule=Rule(is_sender_admin, is_bot_group_admin, is_plugin_idle),
 )
 
